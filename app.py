@@ -8,6 +8,8 @@ from typing import List, Dict
 import pandas as pd
 import streamlit as st
 
+st.set_page_config(page_title="Generador de links y QR de WhatsApp", page_icon="💬", layout="centered")
+
 # Optional dependency for robust phone validation/formatting
 try:
     import phonenumbers
@@ -65,7 +67,6 @@ def make_qr(link: str, box_size: int = 10, border: int = 4):
     return img
 
 def render_header():
-    st.set_page_config(page_title=APP_TITLE, page_icon="💬", layout="centered")
     st.title(f"💬 {APP_TITLE}")
     st.caption(APP_SUBTITLE)
     with st.expander("📖 Versículo de ánimo (Colosenses 3:23)", expanded=False):
