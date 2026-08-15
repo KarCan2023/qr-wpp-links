@@ -20,9 +20,11 @@ except Exception:
 # Optional dependency for QR
 try:
     import qrcode
+    from qrcode.image.pil import PilImage
     from PIL import Image
 except Exception:
     qrcode = None
+    PilImage = None
     Image = None
 
 APP_TITLE = "Generador de links y QR de WhatsApp"
@@ -57,14 +59,53 @@ def build_link(phone_e164: str, text: str, provider: str = "wa.me") -> str:
     else:
         return f"https://wa.me/{phone_e164}?text={encoded}"
 
-def make_qr(link: str, box_size: int = 10, border: int = 4):
+def make_qr(link: str, box_size: int = 10, border: int = 4) -> bytes:
+    """Genera el QR y lo devuelve como bytes PNG.
+
+    Devolvemos bytes (y no el objeto de qrcode) porque `qr.make_image()` retorna un
+    `qrcode.image.pil.PilImage`, que es un envoltorio y NO una instancia de
+    `PIL.Image.Image`; `st.image()` lo rechaza con
+    "TypeError: a bytes-like object is required, not 'PilImage'".
+    Los bytes PNG los aceptan tanto `st.image` como `st.download_button` y el ZIP.
+    """
     if not qrcode:
-        return None
-    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=box_size, border=border)
+        raise RuntimeError(
+            "Falta la dependencia `qrcode[pil]`. Instálala con: pip install \"qrcode[pil]\""
+        )
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=box_size,
+        border=border,
+    )
     qr.add_data(link)
     qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    return img
+
+    # image_factory explícito: si Pillow no estuviera disponible, qrcode caería en
+    # PyPNGImage y `save(..., format="PNG")` fallaría con un kwarg inesperado.
+    img = qr.make_image(image_factory=PilImage, fill_color="black", back_color="white")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+def render_template(text: str, context: Dict[str, str]) -> str:
+    """Aplica .format() sin tumbar la app si el mensaje trae llaves sueltas.
+
+    Un mensaje como "50% {descuento" o "{OTRA_COSA}" lanza ValueError/KeyError/IndexError
+    dentro de str.format; aquí lo convertimos en un error legible para quien usa la app.
+    """
+    try:
+        return text.format(**context)
+    except KeyError as ke:
+        raise ValueError(f"La variable {ke} no existe. Variables disponibles: {', '.join(context) or '(ninguna)'}.")
+    except (IndexError, ValueError):
+        raise ValueError(
+            "El mensaje tiene llaves { } mal formadas. Usa {NOMBRE} para personalizar, "
+            "o escribe {{ y }} si necesitas una llave literal."
+        )
+
 
 def render_header():
     st.title(f"💬 {APP_TITLE}")
@@ -84,7 +125,11 @@ def single_link_ui():
 
     message = st.text_area("Mensaje (usa {NOMBRE} y otras llaves para personalizar en lote)", DEFAULT_MESSAGE, height=160)
     nombre_demo = st.text_input("Vista previa con nombre:", "Carlos")
-    preview_text = message.format(NOMBRE=nombre_demo) if "{NOMBRE}" in message else message
+    try:
+        preview_text = render_template(message, {"NOMBRE": nombre_demo})
+    except ValueError as e:
+        st.error(f"⚠️ {e}")
+        return
     if add_newlines:
         preview_text = preview_text.replace("\\n", "\n")
 
@@ -104,14 +149,19 @@ def single_link_ui():
     st.subheader("🧩 Código QR")
     box = st.slider("Tamaño del cuadro", 5, 20, 10)
     border = st.slider("Borde", 2, 10, 4)
-    img = make_qr(link, box_size=box, border=border)
-    if img is None:
-        st.info("Para generar QR, asegúrate de que la dependencia `qrcode[pil]` esté instalada (ver requirements.txt).")
-    else:
-        st.image(img, caption="Escanéame para abrir WhatsApp")
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        st.download_button("⬇️ Descargar QR (PNG)", data=buf.getvalue(), file_name="qr_whatsapp.png", mime="image/png")
+    try:
+        png = make_qr(link, box_size=box, border=border)
+    except Exception as e:
+        st.error(f"No se pudo generar el QR: {e}")
+        return
+
+    st.image(png, caption="Escanéame para abrir WhatsApp")
+    st.download_button(
+        "⬇️ Descargar QR (PNG)",
+        data=png,
+        file_name=f"qr_whatsapp_{phone_e164}.png",
+        mime="image/png",
+    )
 
 def bulk_ui():
     st.subheader("📦 Generar links/QR en lote (CSV)")
@@ -121,7 +171,7 @@ def bulk_ui():
             "TELEFONO": ["+57 310 123 4567", "3027248068", "(+57) 311-555-7788"],
             "ETIQUETA": ["Rompiendo el Techo", "Reunión Jueves", "Encuentro Jóvenes"]
         })
-        st.dataframe(sample, use_container_width=True)
+        st.dataframe(sample, width="stretch")
         st.download_button(
             "⬇️ Descargar plantilla sample_contacts.csv",
             data=sample.to_csv(index=False).encode("utf-8"),
@@ -157,9 +207,9 @@ def bulk_ui():
             phone_e164 = normalize_phone(raw_phone, region)
             context = {k: str(v) for k, v in row.items()}
             try:
-                text = template.format(**{k: str(v) for k, v in context.items()})
-            except KeyError as ke:
-                st.error(f"Falta la variable {ke} en el CSV para la fila {idx+1}.")
+                text = render_template(template, context)
+            except ValueError as e:
+                st.error(f"Fila {idx + 1}: {e}")
                 return
 
             if not phone_e164:
@@ -174,25 +224,25 @@ def bulk_ui():
         if bad_rows:
             st.warning(f"⚠️ {len(bad_rows)} filas con teléfono inválido: {bad_rows}")
 
-        st.dataframe(result_df, use_container_width=True)
+        st.dataframe(result_df, width="stretch")
 
         csv_bytes = result_df.to_csv(index=False).encode("utf-8")
         st.download_button("⬇️ Descargar links.csv", data=csv_bytes, file_name="links.csv", mime="text/csv")
 
         # Paquete de QRs en ZIP
         if qrcode and not result_df.empty:
-            from zipfile import ZipFile
-            import tempfile, os
+            from zipfile import ZIP_DEFLATED, ZipFile
 
-            zip_buf = io.BytesIO()
-            with ZipFile(zip_buf, "w") as zf:
-                for i, r in result_df.iterrows():
-                    img = make_qr(r["LINK"])
-                    img_buf = io.BytesIO()
-                    img.save(img_buf, format="PNG")
-                    name = f"qr_{r['TELEFONO_E164']}.png"
-                    zf.writestr(name, img_buf.getvalue())
-                zf.writestr("links.csv", csv_bytes)
+            try:
+                zip_buf = io.BytesIO()
+                with ZipFile(zip_buf, "w", ZIP_DEFLATED) as zf:
+                    for _, r in result_df.iterrows():
+                        png = make_qr(r["LINK"])
+                        zf.writestr(f"qr_{r['FILA']:03d}_{r['TELEFONO_E164']}.png", png)
+                    zf.writestr("links.csv", csv_bytes)
+            except Exception as e:
+                st.error(f"No se pudo armar el paquete de QRs: {e}")
+                return
 
             st.download_button(
                 "⬇️ Descargar paquete de QRs + links (.zip)",
