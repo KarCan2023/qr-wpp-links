@@ -1,0 +1,3 @@
+# Dependencias solo para correr los tests (no se instalan en Streamlit Cloud).
+-r requirements.txt
+pytest>=8.0
