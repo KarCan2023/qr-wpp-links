@@ -22,18 +22,42 @@ App lista para desplegar en **Streamlit Community Cloud** que:
 ```
 .
 ├── app.py
-├── requirements.txt
+├── requirements.txt          # lo que necesita la app en producción
+├── requirements-dev.txt      # + pytest, para correr los tests
+├── sample_contacts.csv
 ├── README.md
-└── .streamlit/
-    └── config.toml
+└── tests/
+    └── test_app.py
 ```
 
 ## 🧑‍💻 Uso
 
+> ⚠️ **Los dos modos generan mensajes en direcciones opuestas.** En *Individual* el mensaje
+> lo envía **el visitante** que escanea el QR ("Soy María, ¿me guardan puesto?"). En *Lote*
+> lo envía **la iglesia** a cada contacto ("Hola María, te esperamos"). Cada pestaña ya trae
+> la plantilla correcta por defecto; no copies el texto de una a la otra.
+
 ### Modo **Individual**
-1. Escribe el **teléfono** (con indicativo o selecciona el país para validar).
-2. Redacta el **mensaje**. Puedes usar llaves como `{NOMBRE}` para pruebas.
-3. Copia el **link** o descarga el **QR**.
+1. Escribe el **teléfono de la iglesia** (con indicativo o selecciona el país para validar).
+2. Redacta el **mensaje** que enviará quien escanee. Usa `{NOMBRE}` para la vista previa.
+3. Copia el **link** o descarga el QR:
+   - **QR para pantalla** — para WhatsApp, redes o presentaciones.
+   - **QR para imprimir** — alta resolución (~3k px), para volantes y pendones.
+
+### Logo al centro
+
+El logo de la iglesia vive en `assets/logo.svg` y viene activado por defecto; también se
+puede subir otro desde la app (SVG, PNG o JPG) sin tocar el repo. Al poner logo, la
+corrección de errores del QR sube a nivel **H** y el código se vuelve más denso, así que
+conviene imprimirlo un poco más grande de lo normal.
+
+El tamaño del logo está limitado al **30% del ancho** porque más allá los lectores
+empiezan a fallar. El valor por defecto es 22%. Aun así, **escanea siempre la pieza final
+con un celular real antes de mandarla a imprenta.**
+
+Rasterizar SVG requiere `cairosvg` + `libcairo2` (declarado en `packages.txt`, que
+Streamlit Community Cloud instala solo). Si esa librería falta, la app avisa y sigue
+aceptando logos PNG/JPG.
 
 ### Modo **Lote (CSV)**
 1. Descarga la **plantilla** desde la app o arma tu CSV con columnas:
@@ -41,6 +65,21 @@ App lista para desplegar en **Streamlit Community Cloud** que:
    - `NOMBRE`, `ETIQUETA`, etc. (opcionales)
 2. Escribe un **mensaje plantilla** usando llaves con nombres de columnas del CSV (ej: `{NOMBRE}`, `{ETIQUETA}`).
 3. Descarga `links.csv` o el **ZIP** con todos los QRs + `links.csv`.
+
+El `links.csv` de salida **conserva las columnas de tu CSV original** (nombre, etiqueta…)
+y les agrega `TELEFONO_E164` y `LINK`, para que puedas abrirlo en Excel sin cruzar nada a mano.
+Dentro del ZIP cada QR se llama `qr_001_Maria_573101234567.png`: el número de fila evita que
+dos contactos con el mismo teléfono se sobrescriban.
+
+## 🧪 Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+Los tests levantan la app completa con `streamlit.testing` y verifican que el QR sea un PNG
+válido. Existen porque el QR estuvo roto desde el primer commit sin que nadie lo notara.
 
 > Ejemplo de mensaje útil para campañas de la iglesia:
 ```
