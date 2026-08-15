@@ -42,7 +42,22 @@ App lista para desplegar en **Streamlit Community Cloud** que:
 2. Redacta el **mensaje** que enviará quien escanee. Usa `{NOMBRE}` para la vista previa.
 3. Copia el **link** o descarga el QR:
    - **QR para pantalla** — para WhatsApp, redes o presentaciones.
-   - **QR para imprimir** — alta resolución (~1.5k px), para volantes y pendones.
+   - **QR para imprimir** — alta resolución (~3k px), para volantes y pendones.
+
+### Logo al centro
+
+El logo de la iglesia vive en `assets/logo.svg` y viene activado por defecto; también se
+puede subir otro desde la app (SVG, PNG o JPG) sin tocar el repo. Al poner logo, la
+corrección de errores del QR sube a nivel **H** y el código se vuelve más denso, así que
+conviene imprimirlo un poco más grande de lo normal.
+
+El tamaño del logo está limitado al **30% del ancho** porque más allá los lectores
+empiezan a fallar. El valor por defecto es 22%. Aun así, **escanea siempre la pieza final
+con un celular real antes de mandarla a imprenta.**
+
+Rasterizar SVG requiere `cairosvg` + `libcairo2` (declarado en `packages.txt`, que
+Streamlit Community Cloud instala solo). Si esa librería falta, la app avisa y sigue
+aceptando logos PNG/JPG.
 
 ### Modo **Lote (CSV)**
 1. Descarga la **plantilla** desde la app o arma tu CSV con columnas:

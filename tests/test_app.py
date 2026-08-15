@@ -57,6 +57,89 @@ def test_el_qr_codifica_el_link_completo():
         assert im.size[0] > 400, "el QR no creció para acomodar el mensaje largo"
 
 
+# --- Logo al centro -------------------------------------------------------
+
+LOGO = RAIZ / "assets" / "logo.svg"
+necesita_svg = pytest.mark.skipif(
+    app.cairosvg is None or not LOGO.exists(),
+    reason="requiere cairosvg (libcairo2) y assets/logo.svg",
+)
+
+
+def escanea(png: bytes) -> str:
+    """Decodifica el QR de verdad, con OpenCV. Devuelve '' si no se pudo leer."""
+    import cv2
+    import numpy as np
+
+    with Image.open(io.BytesIO(png)) as im:
+        texto, *_ = cv2.QRCodeDetector().detectAndDecode(np.array(im.convert("L")))
+    return texto
+
+
+@necesita_svg
+def test_cargar_logo_svg_respeta_la_proporcion():
+    logo = app.cargar_logo(LOGO.read_bytes(), "logo.svg", 600)
+
+    assert logo.mode == "RGBA"
+    assert max(logo.size) == 600, "debe caber en la caja pedida"
+    # El logo original es 382x360; no debe salir deformado a cuadrado.
+    assert logo.size[0] != logo.size[1]
+
+
+@necesita_svg
+@pytest.mark.parametrize("pct", [0.18, 0.22, app.LOGO_PCT_MAX])
+def test_el_qr_con_logo_sigue_siendo_escaneable(pct):
+    link = app.build_link("573105226770", app.DEFAULT_MESSAGE_ENTRANTE.format(NOMBRE="Ana"))
+    png = app.make_qr(link, logo=LOGO.read_bytes(), logo_nombre="logo.svg", logo_pct=pct)
+
+    assert escanea(png) == link, f"el logo al {pct:.0%} rompió el QR"
+
+
+@necesita_svg
+def test_el_logo_no_puede_pasarse_del_maximo():
+    """Un pct exagerado se recorta a LOGO_PCT_MAX en vez de arruinar el QR."""
+    link = app.build_link("573105226770", "hola")
+    enorme = app.make_qr(link, logo=LOGO.read_bytes(), logo_nombre="logo.svg", logo_pct=0.9)
+    tope = app.make_qr(link, logo=LOGO.read_bytes(), logo_nombre="logo.svg",
+                       logo_pct=app.LOGO_PCT_MAX)
+
+    assert enorme == tope
+    assert escanea(enorme) == link
+
+
+def logo_png(lado: int = 200) -> bytes:
+    """Un PNG cuadrado y opaco, para probar sin depender de cairosvg."""
+    buf = io.BytesIO()
+    Image.new("RGBA", (lado, lado), (200, 0, 0, 255)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_con_logo_sube_la_correccion_de_errores():
+    """Nivel H recupera el 30% en vez del 15%, y por eso el QR necesita más módulos."""
+    link = app.build_link("573105226770", app.DEFAULT_MESSAGE_ENTRANTE.format(NOMBRE="Ana"))
+
+    sin_logo = Image.open(io.BytesIO(app.make_qr(link, box_size=10)))
+    con_logo = Image.open(
+        io.BytesIO(app.make_qr(link, box_size=10, logo=logo_png(), logo_nombre="logo.png"))
+    )
+
+    assert con_logo.size[0] > sin_logo.size[0]
+
+
+def test_el_qr_con_logo_png_sigue_siendo_escaneable():
+    link = app.build_link("573105226770", "Hola, ¿me guardan puesto?")
+    png = app.make_qr(link, logo=logo_png(), logo_nombre="logo.png")
+
+    assert escanea(png) == link
+
+
+def test_logo_svg_sin_cairosvg_da_error_claro(monkeypatch):
+    monkeypatch.setattr(app, "cairosvg", None)
+
+    with pytest.raises(RuntimeError, match="cairosvg"):
+        app.cargar_logo(b"<svg/>", "logo.svg", 100)
+
+
 # --- Links y teléfonos ----------------------------------------------------
 
 @pytest.mark.parametrize(
