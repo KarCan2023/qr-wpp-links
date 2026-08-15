@@ -1,5 +1,5 @@
-streamlit
-pandas
-qrcode[pil]
-pillow
-phonenumbers
+streamlit>=1.49
+pandas>=2.0
+qrcode[pil]>=7.4
+pillow>=10.0
+phonenumbers>=8.13
